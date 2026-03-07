@@ -2,6 +2,8 @@
 name = "dep"
 version = "0.1.0"
 edition = "2024"
+description = "Concrete-struct dependency injection for Rust using function pointers instead of trait objects"
+readme = "README.md"
 
 [dependencies]
 dep-macros = { path = "dep-macros" }

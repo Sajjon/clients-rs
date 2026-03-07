@@ -51,6 +51,14 @@ client! {
     }
 }
 
+client! {
+    pub struct GenericClient as generic_client {
+        pub fn summarize(inputs: Vec<Result<u64, DependencyError>>) -> usize = |inputs: Vec<Result<u64, DependencyError>>| {
+            inputs.len()
+        };
+    }
+}
+
 #[derive(Depends)]
 pub struct Greeter {
     #[dep]
@@ -65,6 +73,13 @@ impl Greeter {
         let now = self.clock.now_millis();
         Ok(format!("Hello, {} @ {}", user.name, now))
     }
+}
+
+#[derive(Depends)]
+pub struct DerivedGenericHolder {
+    #[dep]
+    clock: Clock,
+    cached_ids: Vec<Result<u64, DependencyError>>,
 }
 
 fn greeting_for_user(id: u64) -> Result<String, DependencyError> {
@@ -107,7 +122,7 @@ fn derives_dependencies_into_fields() {
         clock.now_millis => || 5678,
     }
 
-    let greeter = Greeter::default();
+    let greeter = Greeter::from_deps();
     let result = greeter.greeting_for_user(7).unwrap();
     assert_eq!(result, "Hello, Blob @ 5678");
 }
@@ -135,6 +150,24 @@ fn async_dependencies_work() {
 
     let result = block_on(async_greeting_for_user(5)).unwrap();
     assert_eq!(result, "Hello, Async Blob @ 4321");
+}
+
+#[test]
+fn client_macro_handles_generic_argument_types() {
+    let client = get::<GenericClient>();
+    let result = client.summarize(vec![Ok(1), Err(DependencyError::message("boom"))]);
+    assert_eq!(result, 2);
+}
+
+#[test]
+fn depends_derive_handles_generic_non_dependency_fields() {
+    test_deps! {
+        clock.now_millis => || 2468,
+    }
+
+    let holder = DerivedGenericHolder::from_deps();
+    assert_eq!(holder.clock.now_millis(), 2468);
+    assert!(holder.cached_ids.is_empty());
 }
 
 fn block_on<F>(future: F) -> F::Output

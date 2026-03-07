@@ -550,14 +550,10 @@ where
         _ => return Err("expected a struct name".into()),
     };
 
-    let fields_group = loop {
-        match tokens.next() {
-            Some(TokenTree::Group(group)) if group.delimiter() == Delimiter::Brace => break group,
-            Some(_) => {
-                return Err("Depends does not support generics or where clauses yet".into());
-            }
-            None => return Err("expected a braced struct body".into()),
-        }
+    let fields_group = match tokens.next() {
+        Some(TokenTree::Group(group)) if group.delimiter() == Delimiter::Brace => group,
+        Some(_) => return Err("Depends does not support generics or where clauses yet".into()),
+        None => return Err("expected a braced struct body".into()),
     };
 
     let fields = parse_fields(fields_group.stream())?;
@@ -621,11 +617,11 @@ fn parse_field(tokens: &[TokenTree]) -> Result<Field, String> {
             injected = true;
         }
 
-        if let TokenTree::Punct(punct) = token {
-            if punct.as_char() == ':' {
-                colon_index = Some(index);
-                break;
-            }
+        if let TokenTree::Punct(punct) = token
+            && punct.as_char() == ':'
+        {
+            colon_index = Some(index);
+            break;
         }
     }
 

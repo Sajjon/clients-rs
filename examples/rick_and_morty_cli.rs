@@ -194,10 +194,10 @@ fn fetch_character_live(id: u64) -> Result<Character, ApiClientError> {
 fn choose_character_id() -> u64 {
     let env = get::<Env>();
 
-    if let Some(value) = env.var("DEP_EXAMPLE_CHARACTER_ID".to_string()) {
-        if let Ok(id) = value.parse::<u64>() {
-            return id;
-        }
+    if let Some(value) = env.var("DEP_EXAMPLE_CHARACTER_ID".to_string())
+        && let Ok(id) = value.parse::<u64>()
+    {
+        return id;
     }
 
     let byte = get::<Random>()

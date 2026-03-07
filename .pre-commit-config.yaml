@@ -1,0 +1,18 @@
+repos:
+  - repo: local
+    hooks:
+      - id: typos
+        name: typos
+        entry: just typos
+        language: system
+        pass_filenames: false
+      - id: clippy
+        name: clippy
+        entry: just clippy
+        language: system
+        pass_filenames: false
+      - id: test
+        name: test
+        entry: just test
+        language: system
+        pass_filenames: false

@@ -1,6 +1,6 @@
 //! Concrete dependency injection built from plain structs and function pointers.
 //!
-//! `dep` models each dependency as a concrete, clonable value type instead of a
+//! `dep` models each dependency as a concrete, cloneable value type instead of a
 //! trait object. The usual flow is:
 //!
 //! - declare a dependency client with [`client!`]
@@ -238,16 +238,9 @@ fn release_test_lock() {
 /// Most tests should prefer [`test_deps!`] because it is the smallest API, but
 /// `OverrideBuilder` is useful when you want to replace a whole client at once
 /// or derive a new client from the currently resolved one.
+#[derive(Default)]
 pub struct OverrideBuilder {
     entries: DependencyMap,
-}
-
-impl Default for OverrideBuilder {
-    fn default() -> Self {
-        Self {
-            entries: HashMap::new(),
-        }
-    }
 }
 
 impl OverrideBuilder {
@@ -471,6 +464,7 @@ fn assert_non_capturing<F>() {
 /// `F` must be a valid, inhabited zero-sized closure or function-item type.
 /// The eraser entry points enforce that by calling [`assert_non_capturing`]
 /// before routing execution through this helper.
+#[allow(clippy::uninit_assumed_init)]
 unsafe fn resurrect_zst<F>() -> F {
     debug_assert_eq!(mem::size_of::<F>(), 0);
     unsafe { MaybeUninit::<F>::uninit().assume_init() }

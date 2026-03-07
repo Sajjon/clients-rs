@@ -1,0 +1,42 @@
+name: Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Run cargo publish --dry-run instead of publishing
+        required: true
+        type: boolean
+        default: true
+  release:
+    types:
+      - published
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: typos-cli
+      - uses: Swatinem/rust-cache@v2
+      - name: Dry run publish
+        if: github.event_name == 'workflow_dispatch' && inputs.dry_run
+        run: |
+          just ci
+          cargo publish -p dep-macros --dry-run
+          cargo publish -p dep --dry-run
+      - name: Publish crates
+        if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: just publish

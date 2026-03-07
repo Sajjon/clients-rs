@@ -32,21 +32,21 @@ precommit:
 # proc-macro being visible in the registry, so the GitHub publish workflow does
 # the real `cargo publish --dry-run` validation for both crates against crates.io.
 publish-dry-run:
-    cargo package -p dep-macros --allow-dirty
-    @echo "Skipping local dep dry-run; use the publish workflow for the registry-backed dry-run."
+    cargo package -p clients-macros --allow-dirty
+    @echo "Skipping local clients dry-run; use the publish workflow for the registry-backed dry-run."
 
 # Publish the proc-macro crate first, then the runtime crate.
 publish:
     #!/usr/bin/env bash
     set -euo pipefail
     just ci
-    cargo publish -p dep-macros --token "${CARGO_REGISTRY_TOKEN:?set CARGO_REGISTRY_TOKEN}"
+    cargo publish -p clients-macros --token "${CARGO_REGISTRY_TOKEN:?set CARGO_REGISTRY_TOKEN}"
     for attempt in 1 2 3 4 5; do
-      if cargo publish -p dep --token "${CARGO_REGISTRY_TOKEN:?set CARGO_REGISTRY_TOKEN}"; then
+      if cargo publish -p clients --token "${CARGO_REGISTRY_TOKEN:?set CARGO_REGISTRY_TOKEN}"; then
         exit 0
       fi
-      echo "dep publish did not succeed yet, retrying in 30 seconds..."
+      echo "clients publish did not succeed yet, retrying in 30 seconds..."
       sleep 30
     done
-    echo "dep publish failed after 5 attempts" >&2
+    echo "clients publish failed after 5 attempts" >&2
     exit 1

@@ -1,11 +1,11 @@
-//! Small binary example that uses `dep` from a real `main` entry point.
+//! Small binary example that uses `clients` from a real `main` entry point.
 //!
 //! This example shows the intended "live app" shape:
 //!
-//! - declare an `ApiClient` with [`dep::client`]
+//! - declare an `ApiClient` with [`clients::client`]
 //! - implement that client in terms of built-in live dependencies
 //! - resolve the client from `main`
-//! - keep the call sites small by binding built-ins with [`dep::deps`]
+//! - keep the call sites small by binding built-ins with [`clients::deps`]
 //!
 //! The example talks to the public Rick and Morty API and caches successful
 //! responses in the process temp directory so the fallback path is visible too.
@@ -22,7 +22,7 @@
 //! - `DEP_EXAMPLE_CHARACTER_ID` to choose the default character id
 //! - `RICK_AND_MORTY_BASE_URL` to point at another compatible server
 
-use dep::{
+use clients::{
     Clock, Env, HttpClientError, HttpResponse, Random, client, clock, deps, env, filesystem, get,
     http_client, random,
 };
@@ -134,7 +134,7 @@ client! {
 /// - `filesystem.read_string` and `filesystem.write_string` for cache fallback
 /// - `http_client.get` for the actual API request
 ///
-/// The body stays compact because [`dep::deps`] binds those methods to local
+/// The body stays compact because [`clients::deps`] binds those methods to local
 /// function pointers once at the top of the function.
 fn fetch_character_live(id: u64) -> Result<Character, ApiClientError> {
     deps! {
@@ -150,7 +150,9 @@ fn fetch_character_live(id: u64) -> Result<Character, ApiClientError> {
     let base_url = env_var("RICK_AND_MORTY_BASE_URL".to_string())
         .unwrap_or_else(|| "https://rickandmortyapi.com/api".to_string());
     let url = format!("{}/character/{id}", base_url.trim_end_matches('/'));
-    let cache_path = temp_dir().join(format!("dep-example-rick-and-morty-character-{id}.json"));
+    let cache_path = temp_dir().join(format!(
+        "clients-example-rick-and-morty-character-{id}.json"
+    ));
     let request_tag = next_random();
 
     eprintln!(
@@ -212,7 +214,7 @@ fn choose_character_id() -> u64 {
 ///
 /// The point of `main` is intentionally simple: resolve a few live dependencies,
 /// print some context, fetch one character through `ApiClient`, and render the
-/// result. That keeps the example focused on how `dep` is used in a normal
+/// result. That keeps the example focused on how `clients` is used in a normal
 /// executable rather than on CLI framework setup.
 fn main() -> Result<(), Box<dyn Error>> {
     let character_id = std::env::args()
@@ -220,7 +222,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .and_then(|value| value.parse::<u64>().ok())
         .unwrap_or_else(choose_character_id);
 
-    println!("dep example: Rick and Morty CLI");
+    println!("clients example: Rick and Morty CLI");
     println!("started at: {:?}", get::<Clock>().now());
     println!("temp dir: {}", get::<Env>().temp_dir().display());
     println!("character id: {character_id}");

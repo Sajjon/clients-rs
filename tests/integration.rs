@@ -1,4 +1,4 @@
-use dep::{DependencyError, Depends, OverrideBuilder, client, deps, get, test_deps};
+use clients::{DependencyError, Depends, OverrideBuilder, client, deps, get, test_deps};
 use std::any::Any;
 use std::future::Future;
 use std::panic::{AssertUnwindSafe, catch_unwind};

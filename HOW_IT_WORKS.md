@@ -1,21 +1,21 @@
-# How `dep` Works
+# How `clients` Works
 
 This crate has two layers:
 
 - the runtime in [`src/lib.rs`](./src/lib.rs)
-- the proc-macro expansion logic in [`dep-macros/src/lib.rs`](./dep-macros/src/lib.rs)
+- the proc-macro expansion logic in [`clients-macros/src/lib.rs`](./clients-macros/src/lib.rs)
 
 The design goal is simple: let users write dependency clients as plain structs
 with methods, while keeping overrides lightweight and avoiding trait objects.
 
 ## The mental model
 
-Every dependency client in `dep` is a concrete value type.
+Every dependency client in `clients` is a concrete value type.
 
 When you write:
 
 ```rust
-use dep::client;
+use clients::client;
 
 client! {
     pub struct Clock as clock {
@@ -52,7 +52,7 @@ That is the core trick of the crate:
 
 For each client, the macro also generates:
 
-- `impl dep::Dependency for Client`, so `get::<Client>()` can resolve a live value
+- `impl clients::Dependency for Client`, so `get::<Client>()` can resolve a live value
 - `impl Default for Client`, forwarding to `Dependency::live()`
 - a helper module named after the `as ...` clause
 - one nested helper module per method
@@ -75,7 +75,7 @@ pub mod clock {
 
     pub mod now_millis {
         pub fn get() -> fn() -> u64 { ... }
-        pub fn override_with<F>(builder: &mut dep::OverrideBuilder, implementation: F)
+        pub fn override_with<F>(builder: &mut clients::OverrideBuilder, implementation: F)
         where
             F: Fn() -> u64 + Copy + 'static,
         { ... }
@@ -113,7 +113,7 @@ pub fn fetch_user(id: u64) -> Result<User, UserClientError>;
 ```
 
 the macro generates a default function pointer that panics via
-`dep::unimplemented_dependency("UserClient.fetch_user")`.
+`clients::unimplemented_dependency("UserClient.fetch_user")`.
 
 That keeps the client usable in tests even when the live dependency is supposed
 to be supplied only by test overrides.
@@ -195,7 +195,7 @@ where
 ```
 
 The async version does the same thing, except it boxes the returned future into
-`dep::BoxFuture<R>`.
+`clients::BoxFuture<R>`.
 
 ## Why the erasers need `unsafe`
 
@@ -205,7 +205,7 @@ trampoline body.
 
 That is what `resurrect_zst::<F>()` does.
 
-This is only valid because `dep` enforces a strong invariant first:
+This is only valid because `clients` enforces a strong invariant first:
 
 - the closure must be non-capturing
 - non-capturing closures and function items are zero-sized
@@ -230,7 +230,7 @@ closure would otherwise produce a different anonymous future type. To keep the
 generated client concrete, async methods are stored as:
 
 ```rust
-fn(...) -> dep::BoxFuture<R>
+fn(...) -> clients::BoxFuture<R>
 ```
 
 So the async eraser:
@@ -286,7 +286,7 @@ can stay unindented.
 
 For each field:
 
-- `#[dep] field: T` becomes `field: dep::get::<T>()`
+- `#[dep] field: T` becomes `field: clients::get::<T>()`
 - every other field becomes `field: Default::default()`
 
 The derive then generates:
@@ -305,6 +305,6 @@ In practice the cost model is:
 - one function-pointer call per sync dependency method invocation
 - one boxed future allocation per async dependency method invocation
 
-That makes `dep` a good fit for application-level dependency wiring and tests.
+That makes `clients` a good fit for application-level dependency wiring and tests.
 It is less well suited to designs that expect repeated global resolution inside
 tight inner loops.

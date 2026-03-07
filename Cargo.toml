@@ -1,6 +1,6 @@
 [workspace]
-members = ["dep-macros"]
-default-members = [".", "dep-macros"]
+members = ["clients-macros"]
+default-members = [".", "clients-macros"]
 resolver = "3"
 
 [features]
@@ -9,14 +9,17 @@ reqwest = ["dep:reqwest"]
 uuid = ["dep:uuid"]
 
 [package]
-name = "dep"
+name = "clients"
 version = "0.1.0"
 edition = "2024"
 description = "Concrete-struct dependency injection for Rust using function pointers instead of trait objects"
 readme = "README.md"
+license = "MIT"
+documentation = "https://docs.rs/clients"
+repository = "https://github.com/Sajjon/clients-rs"
 
 [dependencies]
-dep-macros = { path = "dep-macros", version = "0.1.0" }
+clients-macros = { path = "clients-macros", version = "0.1.0" }
 rand = "0.8"
 reqwest = { version = "0.12", optional = true, default-features = false, features = ["blocking", "rustls-tls"] }
 uuid = { version = "1", optional = true, features = ["v4"] }

@@ -33,8 +33,8 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && inputs.dry_run
         run: |
           just ci
-          cargo publish -p dep-macros --dry-run
-          cargo publish -p dep --dry-run
+          cargo publish -p clients-macros --dry-run
+          cargo publish -p clients --dry-run
       - name: Publish crates
         if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)
         env:

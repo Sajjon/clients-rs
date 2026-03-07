@@ -1,0 +1,11 @@
+[package]
+name = "clients-macros"
+version = "0.1.0"
+edition = "2024"
+description = "Procedural macros for the clients concrete dependency injection crate"
+license = "MIT"
+documentation = "https://docs.rs/clients-macros"
+repository = "https://github.com/Sajjon/clients-rs"
+
+[lib]
+proc-macro = true

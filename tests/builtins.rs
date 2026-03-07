@@ -1,4 +1,4 @@
-use dep::{Clock, Env, Filesystem, Random, get};
+use clients::{Clock, Env, Filesystem, Random, get};
 use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -6,9 +6,9 @@ use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 use std::time::{Duration, SystemTime};
 
 #[cfg(feature = "reqwest")]
-use dep::http_client;
+use clients::http_client;
 #[cfg(feature = "reqwest")]
-use dep::test_deps;
+use clients::test_deps;
 
 fn block_on<F>(future: F) -> F::Output
 where
@@ -97,7 +97,7 @@ fn filesystem_reads_and_writes_bytes_and_strings() {
 #[cfg(feature = "uuid")]
 #[test]
 fn uuid_generates_uuid_strings() {
-    let uuid = get::<dep::Uuid>().generate();
+    let uuid = get::<clients::Uuid>().generate();
     assert_eq!(uuid.to_string().len(), 36);
 }
 
@@ -106,7 +106,7 @@ fn uuid_generates_uuid_strings() {
 fn http_client_can_be_overridden() {
     test_deps! {
         http_client.get => |_url| {
-            Ok(dep::HttpResponse {
+            Ok(clients::HttpResponse {
                 status: 200,
                 headers: Default::default(),
                 body: b"ok".to_vec(),
@@ -114,7 +114,7 @@ fn http_client_can_be_overridden() {
         },
     }
 
-    let response = get::<dep::HttpClient>()
+    let response = get::<clients::HttpClient>()
         .get("https://example.com".into())
         .expect("override should succeed");
     assert_eq!(response.status, 200);
@@ -126,5 +126,5 @@ fn unique_temp_path(label: &str) -> PathBuf {
         .duration_since(SystemTime::UNIX_EPOCH)
         .expect("system time should be after the unix epoch")
         .as_nanos();
-    std::env::temp_dir().join(format!("dep-{label}-{nanos}.tmp"))
+    std::env::temp_dir().join(format!("clients-{label}-{nanos}.tmp"))
 }

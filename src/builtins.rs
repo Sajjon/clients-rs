@@ -39,7 +39,7 @@ crate::client! {
     /// # Examples
     ///
     /// ```
-    /// let now = dep::get::<dep::Clock>().now();
+    /// let now = clients::get::<clients::Clock>().now();
     /// assert!(now <= std::time::SystemTime::now());
     /// ```
     pub struct Clock as clock {
@@ -57,7 +57,7 @@ crate::client! {
         /// # use std::time::Duration;
         /// # fn main() {
         /// #     fn block_on<F: std::future::Future<Output = ()>>(_future: F) {}
-        /// block_on(dep::get::<dep::Clock>().sleep(Duration::from_millis(10)));
+        /// block_on(clients::get::<clients::Clock>().sleep(Duration::from_millis(10)));
         /// # }
         /// ```
         pub async fn sleep(duration: Duration) -> () = clock_sleep;
@@ -89,7 +89,7 @@ crate::client! {
     /// # Examples
     ///
     /// ```
-    /// let env = dep::get::<dep::Env>();
+    /// let env = clients::get::<clients::Env>();
     /// assert!(env.temp_dir().is_absolute());
     /// assert_eq!(env.var("__DEP_MISSING_ENV_EXAMPLE__".into()), None);
     /// ```
@@ -128,7 +128,7 @@ crate::client! {
     /// # Examples
     ///
     /// ```
-    /// let random = dep::get::<dep::Random>();
+    /// let random = clients::get::<clients::Random>();
     /// let bytes = random.fill_bytes(8);
     ///
     /// assert_eq!(bytes.len(), 8);
@@ -174,12 +174,12 @@ crate::client! {
     /// ```
     /// use std::time::{SystemTime, UNIX_EPOCH};
     ///
-    /// let filesystem = dep::get::<dep::Filesystem>();
+    /// let filesystem = clients::get::<clients::Filesystem>();
     /// let unique = SystemTime::now()
     ///     .duration_since(UNIX_EPOCH)
     ///     .expect("system time should be after the unix epoch")
     ///     .as_nanos();
-    /// let path = std::env::temp_dir().join(format!("dep-doc-filesystem-{unique}.txt"));
+    /// let path = std::env::temp_dir().join(format!("clients-doc-filesystem-{unique}.txt"));
     ///
     /// filesystem
     ///     .write_string(path.clone(), "hello".to_string())
@@ -221,7 +221,7 @@ crate::client! {
     /// # Examples
     ///
     /// ```
-    /// let value = dep::get::<dep::Uuid>().generate();
+    /// let value = clients::get::<clients::Uuid>().generate();
     /// assert_eq!(value.to_string().len(), 36);
     /// ```
     pub struct Uuid as uuid {
@@ -285,9 +285,9 @@ impl HttpRequest {
     /// Builds a `GET` request with an empty body and no headers.
     ///
     /// ```
-    /// let request = dep::HttpRequest::get("https://example.com");
+    /// let request = clients::HttpRequest::get("https://example.com");
     ///
-    /// assert_eq!(request.method, dep::HttpMethod::Get);
+    /// assert_eq!(request.method, clients::HttpMethod::Get);
     /// assert_eq!(request.url, "https://example.com");
     /// assert!(request.headers.is_empty());
     /// assert!(request.body.is_empty());
@@ -304,9 +304,9 @@ impl HttpRequest {
     /// Builds a `POST` request with the supplied raw body and no headers.
     ///
     /// ```
-    /// let request = dep::HttpRequest::post("https://example.com", b"hello".to_vec());
+    /// let request = clients::HttpRequest::post("https://example.com", b"hello".to_vec());
     ///
-    /// assert_eq!(request.method, dep::HttpMethod::Post);
+    /// assert_eq!(request.method, clients::HttpMethod::Post);
     /// assert_eq!(request.body, b"hello".to_vec());
     /// ```
     pub fn post(url: impl Into<String>, body: Vec<u8>) -> Self {
@@ -407,14 +407,14 @@ crate::client! {
     ///
     /// The built-in implementation uses `reqwest::blocking::Client`, which
     /// keeps the dependency surface small and works in both sync code and
-    /// tests. As with every other client in `dep`, you can override just the
+    /// tests. As with every other client in `clients`, you can override just the
     /// pieces you need.
     ///
     /// # Examples
     ///
     /// ```
-    /// use dep::{HttpClient, HttpRequest, HttpResponse, get, test_deps};
-    /// use dep::http_client;
+    /// use clients::{HttpClient, HttpRequest, HttpResponse, get, test_deps};
+    /// use clients::http_client;
     ///
     /// test_deps! {
     ///     http_client.execute => |request| {

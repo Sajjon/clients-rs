@@ -1,4 +1,4 @@
-//! Procedural macros that power the public `dep` API.
+//! Procedural macros that power the public `clients` API.
 //!
 //! The runtime crate intentionally keeps parsing dependencies small and local, so
 //! this crate hand-rolls just enough token inspection to support the user-facing
@@ -15,8 +15,8 @@ use proc_macro::{Delimiter, Spacing, TokenStream, TokenTree};
 ///
 /// The macro also generates a helper module whose name comes after `as`, along
 /// with one nested helper module per declared method. Those helper modules are
-/// what power [`dep::deps!`](https://docs.rs/dep/latest/dep/macro.deps.html)
-/// and [`dep::test_deps!`](https://docs.rs/dep/latest/dep/macro.test_deps.html).
+/// what power [`clients::deps!`](https://docs.rs/clients/latest/clients/macro.deps.html)
+/// and [`clients::test_deps!`](https://docs.rs/clients/latest/clients/macro.test_deps.html).
 ///
 /// A method may provide a live implementation directly:
 ///
@@ -63,7 +63,7 @@ pub fn client(input: TokenStream) -> TokenStream {
 
 /// Derives dependency-backed construction for a simple braced struct.
 ///
-/// Fields marked with `#[dep]` are initialized with `::dep::get::<FieldType>()`.
+/// Fields marked with `#[dep]` are initialized with `::clients::get::<FieldType>()`.
 /// All other fields are initialized with `Default::default()`.
 ///
 /// The derive generates:
@@ -161,7 +161,7 @@ fn expand_client(input: TokenStream) -> Result<TokenStream, String> {
             {method_lines}
         }}
 
-        impl ::dep::Dependency for {name} {{
+        impl ::clients::Dependency for {name} {{
             fn live() -> Self {{
                 Self {{
                     {live_lines}
@@ -171,7 +171,7 @@ fn expand_client(input: TokenStream) -> Result<TokenStream, String> {
 
         impl ::core::default::Default for {name} {{
             fn default() -> Self {{
-                <Self as ::dep::Dependency>::live()
+                <Self as ::clients::Dependency>::live()
             }}
         }}
 
@@ -179,7 +179,7 @@ fn expand_client(input: TokenStream) -> Result<TokenStream, String> {
             use super::*;
 
             pub fn get() -> super::{name} {{
-                ::dep::get::<super::{name}>()
+                ::clients::get::<super::{name}>()
             }}
 
             {module_lines}
@@ -227,9 +227,9 @@ impl Method {
     /// Chooses the correct runtime eraser helper for the method shape.
     fn eraser_name(&self) -> String {
         if self.is_async {
-            format!("::dep::erase_async_{}", self.arity())
+            format!("::clients::erase_async_{}", self.arity())
         } else {
-            format!("::dep::erase_sync_{}", self.arity())
+            format!("::clients::erase_sync_{}", self.arity())
         }
     }
 
@@ -264,7 +264,7 @@ impl Method {
     /// Renders the function-pointer return type used by the stored field.
     fn fn_pointer_return(&self) -> String {
         if self.is_async {
-            format!("::dep::BoxFuture<{}>", self.return_ty)
+            format!("::clients::BoxFuture<{}>", self.return_ty)
         } else {
             self.return_ty.clone()
         }
@@ -325,9 +325,9 @@ impl Method {
         } else if self.is_async {
             format!(
                 "{{
-                        fn __dep_unimplemented({}) -> ::dep::BoxFuture<{}> {{
-                            ::dep::boxed(async move {{
-                                ::dep::unimplemented_dependency(\"{}.{}\")
+                        fn __dep_unimplemented({}) -> ::clients::BoxFuture<{}> {{
+                            ::clients::boxed(async move {{
+                                ::clients::unimplemented_dependency(\"{}.{}\")
                             }})
                         }}
 
@@ -342,7 +342,7 @@ impl Method {
             format!(
                 "{{
                         fn __dep_unimplemented({}) -> {} {{
-                            ::dep::unimplemented_dependency(\"{}.{}\")
+                            ::clients::unimplemented_dependency(\"{}.{}\")
                         }}
 
                         __dep_unimplemented
@@ -370,7 +370,7 @@ impl Method {
                         super::get().{}
                     }}
 
-                    pub fn override_with<F, Fut>(builder: &mut ::dep::OverrideBuilder, implementation: F)
+                    pub fn override_with<F, Fut>(builder: &mut ::clients::OverrideBuilder, implementation: F)
                     where
                         F: Fn({}) -> Fut + Copy + 'static,
                         Fut: ::core::future::Future<Output = {}> + Send + 'static,
@@ -399,7 +399,7 @@ impl Method {
                         super::get().{}
                     }}
 
-                    pub fn override_with<F>(builder: &mut ::dep::OverrideBuilder, implementation: F)
+                    pub fn override_with<F>(builder: &mut ::clients::OverrideBuilder, implementation: F)
                     where
                         F: Fn({}) -> {} + Copy + 'static,
                     {{
@@ -561,7 +561,7 @@ where
         .into_iter()
         .map(|field| {
             if field.injected {
-                format!("{}: ::dep::get::<{}>()", field.name, field.ty)
+                format!("{}: ::clients::get::<{}>()", field.name, field.ty)
             } else {
                 format!("{}: ::core::default::Default::default()", field.name)
             }

@@ -142,7 +142,7 @@ fn expand_client(input: TokenStream) -> Result<TokenStream, String> {
         .join("\n\n");
     let live_lines = methods
         .iter()
-        .map(|method| format!("{}: {}", method.name, method.render_live_initializer(&module)))
+        .map(|method| format!("{}: {}", method.name, method.render_live_initializer(&name)))
         .collect::<Vec<_>>()
         .join(",\n                    ");
     let module_lines = methods
@@ -319,7 +319,7 @@ impl Method {
     /// When a live implementation is present, this selects the correct eraser
     /// helper. Otherwise it generates a panic-based placeholder used to surface
     /// missing live implementations with a readable dependency path.
-    fn render_live_initializer(&self, module: &str) -> String {
+    fn render_live_initializer(&self, client_name: &str) -> String {
         if let Some(implementation) = &self.implementation {
             format!("{}({implementation})", self.eraser_name())
         } else if self.is_async {
@@ -335,7 +335,7 @@ impl Method {
                     }}",
                 self.args_decl(),
                 self.return_ty,
-                module,
+                client_name,
                 self.name,
             )
         } else {
@@ -349,7 +349,7 @@ impl Method {
                     }}",
                 self.args_decl(),
                 self.return_ty,
-                module,
+                client_name,
                 self.name,
             )
         }
@@ -581,6 +581,7 @@ where
         }}
 
         impl {name} {{
+            #[doc = \"Constructs `Self` by resolving every `#[dep]` field from the dependency system and initializing all other fields with `Default::default()`.\"]
             pub fn from_deps() -> Self {{
                 ::core::default::Default::default()
             }}
@@ -755,11 +756,7 @@ fn with_trailing_space(value: &str) -> String {
 /// Returns `", "` when `value` is non-empty so rendered methods can place
 /// commas between `&self` and declared parameters without branching inline.
 fn maybe_comma(value: &str) -> &'static str {
-    if value.is_empty() {
-        ""
-    } else {
-        ", "
-    }
+    if value.is_empty() { "" } else { ", " }
 }
 
 /// Renders a compile-time error token stream from a friendly message.

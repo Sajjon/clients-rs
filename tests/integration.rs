@@ -1,5 +1,7 @@
-use dep::{DependencyError, Depends, client, deps, get, test_deps};
+use dep::{DependencyError, Depends, OverrideBuilder, client, deps, get, test_deps};
+use std::any::Any;
 use std::future::Future;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::pin::Pin;
 use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 
@@ -9,11 +11,14 @@ struct User {
     name: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum UserClientError {
+    Unavailable,
+}
+
 client! {
     pub struct UserClient as user_client {
-        pub fn fetch_user(id: u64) -> Result<User, DependencyError> = |_id| {
-            Err(DependencyError::missing("user_client.fetch_user"))
-        };
+        pub fn fetch_user(id: u64) -> Result<User, UserClientError>;
     }
 }
 
@@ -25,7 +30,7 @@ client! {
 
 client! {
     pub struct GreetingClient as greeting_client {
-        pub fn greeting_for_user(id: u64) -> Result<String, DependencyError> = |id| {
+        pub fn greeting_for_user(id: u64) -> Result<String, UserClientError> = |id| {
             deps! {
                 fetch_user = user_client.fetch_user,
                 now = clock.now_millis,
@@ -37,11 +42,14 @@ client! {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AsyncUserClientError {
+    Unavailable,
+}
+
 client! {
     pub struct AsyncUserClient as async_user_client {
-        pub async fn fetch_user(id: u64) -> Result<User, DependencyError> = |_id| async move {
-            Err(DependencyError::missing("async_user_client.fetch_user"))
-        };
+        pub async fn fetch_user(id: u64) -> Result<User, AsyncUserClientError>;
     }
 }
 
@@ -68,7 +76,7 @@ pub struct Greeter {
 }
 
 impl Greeter {
-    pub fn greeting_for_user(&self, id: u64) -> Result<String, DependencyError> {
+    pub fn greeting_for_user(&self, id: u64) -> Result<String, UserClientError> {
         let user = self.user_client.fetch_user(id)?;
         let now = self.clock.now_millis();
         Ok(format!("Hello, {} @ {}", user.name, now))
@@ -82,7 +90,7 @@ pub struct DerivedGenericHolder {
     cached_ids: Vec<Result<u64, DependencyError>>,
 }
 
-fn greeting_for_user(id: u64) -> Result<String, DependencyError> {
+fn greeting_for_user(id: u64) -> Result<String, UserClientError> {
     deps! {
         fetch_user = user_client.fetch_user,
         now = clock.now_millis,
@@ -93,7 +101,7 @@ fn greeting_for_user(id: u64) -> Result<String, DependencyError> {
     Ok(format!("Hello, {} @ {}", user.name, now))
 }
 
-async fn async_greeting_for_user(id: u64) -> Result<String, DependencyError> {
+async fn async_greeting_for_user(id: u64) -> Result<String, AsyncUserClientError> {
     deps! {
         fetch_user = async_user_client.fetch_user,
         now = async_clock.now_millis,
@@ -102,6 +110,16 @@ async fn async_greeting_for_user(id: u64) -> Result<String, DependencyError> {
     let user = fetch_user(id).await?;
     let now = now().await;
     Ok(format!("Hello, {} @ {}", user.name, now))
+}
+
+fn panic_message(payload: Box<dyn Any + Send>) -> String {
+    match payload.downcast::<String>() {
+        Ok(message) => *message,
+        Err(payload) => match payload.downcast::<&'static str>() {
+            Ok(message) => (*message).to_string(),
+            Err(_) => "<non-string panic payload>".into(),
+        },
+    }
 }
 
 #[test]
@@ -137,6 +155,19 @@ fn clients_can_depend_on_clients() {
     let client = get::<GreetingClient>();
     let result = client.greeting_for_user(1).unwrap();
     assert_eq!(result, "Hello, Blob @ 999");
+}
+
+#[test]
+fn omitted_client_implementation_panics_with_actionable_diagnostics() {
+    let _test_scope = OverrideBuilder::new().enter_test();
+    let panic = catch_unwind(AssertUnwindSafe(|| {
+        let _ = get::<UserClient>().fetch_user(42);
+    }))
+    .expect_err("missing client implementation should panic");
+
+    let message = panic_message(panic);
+    assert!(message.contains("UserClient.fetch_user"));
+    assert!(message.contains("test_deps!"));
 }
 
 #[test]

@@ -230,3 +230,86 @@ fn noop_waker() -> Waker {
 
     unsafe { Waker::from_raw(RawWaker::new(std::ptr::null(), &VTABLE)) }
 }
+
+// ---------------------------------------------------------------------------
+// #[arg] attribute tests
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
+enum LogLevel {
+    Info,
+    Debug,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Config {
+    log_level: LogLevel,
+    base_url: String,
+}
+
+#[derive(Depends)]
+struct ServiceWithArg {
+    #[dep]
+    clock: Clock,
+    #[arg]
+    config: Config,
+}
+
+#[test]
+fn arg_field_is_passed_through_from_deps() {
+    test_deps! {
+        clock.now_millis => || 7777,
+    }
+
+    let config = Config {
+        log_level: LogLevel::Debug,
+        base_url: "https://test.example.com".into(),
+    };
+    let service = ServiceWithArg::from_deps(config.clone());
+
+    assert_eq!(service.clock.now_millis(), 7777);
+    assert_eq!(service.config, config);
+}
+
+#[derive(Depends)]
+struct LayerA {
+    #[dep]
+    user_client: UserClient,
+}
+
+impl LayerA {
+    fn fetch(&self, id: u64) -> Result<User, UserClientError> {
+        self.user_client.fetch_user(id)
+    }
+}
+
+#[derive(Depends)]
+struct LayerB {
+    layer_a: LayerA,
+}
+
+#[derive(Depends)]
+struct LayerC {
+    layer_b: LayerB,
+    #[arg]
+    tag: String,
+}
+
+#[test]
+fn deep_nesting_resolves_deps_through_default_chain() {
+    test_deps! {
+        user_client.fetch_user => |id| Ok(User { id, name: "Deep".into() }),
+    }
+
+    let app = LayerC::from_deps("my-tag".to_string());
+
+    assert_eq!(app.tag, "my-tag");
+    assert_eq!(
+        app.layer_b.layer_a.fetch(1).unwrap(),
+        User {
+            id: 1,
+            name: "Deep".into()
+        }
+    );
+}

@@ -90,7 +90,7 @@ pub fn client(input: TokenStream) -> TokenStream {
 ///
 /// - only braced structs are supported
 /// - generics and where-clauses are not currently supported
-#[proc_macro_derive(Depends, attributes(dep))]
+#[proc_macro_derive(Depends, attributes(dep, arg))]
 pub fn derive_depends(input: TokenStream) -> TokenStream {
     match derive_depends_impl(input) {
         Ok(stream) => stream,
@@ -541,6 +541,13 @@ fn derive_depends_impl(input: TokenStream) -> Result<TokenStream, String> {
 }
 
 /// Expands a supported struct declaration into `Default` and `from_deps()`.
+///
+/// When no `#[arg]` fields are present, generates both `impl Default` and a
+/// zero-argument `from_deps()` that forwards to it.
+///
+/// When one or more `#[arg]` fields are present, `impl Default` is omitted
+/// (the struct cannot be defaulted without those values) and `from_deps()`
+/// takes them as parameters in field-declaration order.
 fn expand_struct<I>(mut tokens: I) -> Result<TokenStream, String>
 where
     I: Iterator<Item = TokenTree>,
@@ -557,11 +564,15 @@ where
     };
 
     let fields = parse_fields(fields_group.stream())?;
+    let has_args = fields.iter().any(|f| f.is_arg);
+
     let initializers = fields
-        .into_iter()
+        .iter()
         .map(|field| {
             if field.injected {
                 format!("{}: ::clients::get::<{}>()", field.name, field.ty)
+            } else if field.is_arg {
+                field.name.clone()
             } else {
                 format!("{}: ::core::default::Default::default()", field.name)
             }
@@ -569,20 +580,38 @@ where
         .collect::<Vec<_>>()
         .join(", ");
 
-    let output = format!(
-        "impl ::core::default::Default for {name} {{
-            fn default() -> Self {{
-                Self {{ {initializers} }}
-            }}
-        }}
+    let output = if has_args {
+        let arg_params = fields
+            .iter()
+            .filter(|f| f.is_arg)
+            .map(|f| format!("{}: {}", f.name, f.ty))
+            .collect::<Vec<_>>()
+            .join(", ");
 
-        impl {name} {{
-            #[doc = \"Constructs `Self` by resolving every `#[dep]` field from the dependency system and initializing all other fields with `Default::default()`.\"]
-            pub fn from_deps() -> Self {{
-                ::core::default::Default::default()
+        format!(
+            "impl {name} {{
+                #[doc = \"Constructs `Self` by resolving every `#[dep]` field from the dependency system, initializing plain fields with `Default::default()`, and accepting `#[arg]` fields as parameters.\"]
+                pub fn from_deps({arg_params}) -> Self {{
+                    Self {{ {initializers} }}
+                }}
+            }}"
+        )
+    } else {
+        format!(
+            "impl ::core::default::Default for {name} {{
+                fn default() -> Self {{
+                    Self {{ {initializers} }}
+                }}
             }}
-        }}",
-    );
+
+            impl {name} {{
+                #[doc = \"Constructs `Self` by resolving every `#[dep]` field from the dependency system and initializing all other fields with `Default::default()`.\"]
+                pub fn from_deps() -> Self {{
+                    ::core::default::Default::default()
+                }}
+            }}"
+        )
+    };
 
     output
         .parse::<TokenStream>()
@@ -597,6 +626,8 @@ struct Field {
     ty: String,
     /// Whether the field carries `#[dep]`.
     injected: bool,
+    /// Whether the field carries `#[arg]`.
+    is_arg: bool,
 }
 
 /// Parses a comma-separated field list from a braced struct body.
@@ -607,14 +638,18 @@ fn parse_fields(stream: TokenStream) -> Result<Vec<Field>, String> {
         .collect()
 }
 
-/// Parses one struct field and detects the `#[dep]` marker attribute.
+/// Parses one struct field and detects the `#[dep]` and `#[arg]` marker attributes.
 fn parse_field(tokens: &[TokenTree]) -> Result<Field, String> {
     let mut injected = false;
+    let mut is_arg = false;
     let mut colon_index = None;
 
     for (index, token) in tokens.iter().enumerate() {
         if matches_dep_attribute(tokens, index) {
             injected = true;
+        }
+        if matches_arg_attribute(tokens, index) {
+            is_arg = true;
         }
 
         if let TokenTree::Punct(punct) = token
@@ -623,6 +658,10 @@ fn parse_field(tokens: &[TokenTree]) -> Result<Field, String> {
             colon_index = Some(index);
             break;
         }
+    }
+
+    if injected && is_arg {
+        return Err("a field cannot carry both `#[dep]` and `#[arg]`".into());
     }
 
     let colon_index = colon_index.ok_or_else(|| "expected a named struct field".to_string())?;
@@ -648,6 +687,7 @@ fn parse_field(tokens: &[TokenTree]) -> Result<Field, String> {
         name,
         ty: ty_tokens.to_string(),
         injected,
+        is_arg,
     })
 }
 
@@ -703,6 +743,27 @@ fn ident_at(tokens: &[TokenTree], index: usize, expected: &str) -> Result<String
         Some(TokenTree::Ident(ident)) => Ok(ident.to_string()),
         _ => Err(format!("expected {expected}")),
     }
+}
+
+/// Returns `true` when the token pair at `index` spells `#[arg]`.
+fn matches_arg_attribute(tokens: &[TokenTree], index: usize) -> bool {
+    let Some(TokenTree::Punct(pound)) = tokens.get(index) else {
+        return false;
+    };
+    if pound.as_char() != '#' {
+        return false;
+    }
+
+    let Some(TokenTree::Group(group)) = tokens.get(index + 1) else {
+        return false;
+    };
+
+    if group.delimiter() != Delimiter::Bracket {
+        return false;
+    }
+
+    let mut attribute_tokens = group.stream().into_iter();
+    matches!(attribute_tokens.next(), Some(TokenTree::Ident(ident)) if ident.to_string() == "arg")
 }
 
 /// Returns `true` when the token pair at `index` spells `#[dep]`.

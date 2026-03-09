@@ -27,7 +27,7 @@ jobs:
           tool: typos-cli
       - uses: Swatinem/rust-cache@v2
       - name: Determine release tag
-        if: !inputs.dry_run
+        if: ${{ !inputs.dry_run }}
         id: release_tag
         run: |
           tag="$(
@@ -39,12 +39,12 @@ jobs:
           fi
           echo "tag=v${tag}" >> "$GITHUB_OUTPUT"
       - name: Ensure release tag does not already exist
-        if: !inputs.dry_run
+        if: ${{ !inputs.dry_run }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           tag="${{ steps.release_tag.outputs.tag }}"
-          if git ls-remote --exit-code --tags origin "$tag" >/dev/null 2>&1; then
+          if git ls-remote --exit-code --refs --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
             echo "Tag ${tag} already exists" >&2
             exit 1
           fi
@@ -53,36 +53,42 @@ jobs:
             exit 1
           fi
       - name: Dry run publish
-        if: inputs.dry_run
+        if: ${{ inputs.dry_run }}
         run: |
           just ci
           cargo publish -p clients-macros --dry-run
           cargo publish -p clients --dry-run
       - name: Publish crates
-        if: !inputs.dry_run
+        if: ${{ !inputs.dry_run }}
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: just publish
       - name: Create git tag and GitHub release
-        if: !inputs.dry_run
+        if: ${{ !inputs.dry_run }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
           tag="${{ steps.release_tag.outputs.tag }}"
+          remote_tag_pushed=0
           cleanup() {
-            echo "Cleaning up tag ${tag} after release creation failure" >&2
+            local exit_code="$1"
+            local failed_command="$2"
+
+            echo "Cleaning up tag ${tag} after command failure (exit code ${exit_code}): ${failed_command}" >&2
             if git rev-parse "$tag" >/dev/null 2>&1 && ! git tag -d "$tag" >/dev/null 2>&1; then
               echo "Failed to delete local tag ${tag} during cleanup" >&2
             fi
-            if git ls-remote --exit-code --tags origin "$tag" >/dev/null 2>&1 && ! git push origin ":refs/tags/$tag"; then
+            if [ "$remote_tag_pushed" -eq 1 ] && ! git push origin ":refs/tags/$tag"; then
               echo "Failed to delete remote tag ${tag} during cleanup" >&2
             fi
           }
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          trap cleanup ERR
+          trap 'cleanup "$?" "$BASH_COMMAND"' ERR
           git tag "$tag"
           git push origin "$tag"
+          remote_tag_pushed=1
           gh release create "$tag" --verify-tag --generate-notes --title "$tag"
           trap - ERR

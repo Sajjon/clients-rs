@@ -31,13 +31,13 @@ jobs:
         id: release_tag
         run: |
           tag="$(
-            cargo metadata --no-deps --format-version 1 | python3 -c 'import json, sys; metadata = json.load(sys.stdin); package = next((pkg for pkg in metadata["packages"] if pkg["name"] == "clients"), None); sys.exit("Package \"clients\" not found in cargo metadata") if package is None else print(f"v{package[\"version\"]}")'
+            cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "clients") | .version'
           )"
-          if [ -z "$tag" ]; then
-            echo "Could not determine package version from cargo metadata" >&2
+          if [ -z "$tag" ] || [ "$tag" = "null" ]; then
+            echo 'Could not determine version for package "clients" from cargo metadata; the package may be missing from the workspace' >&2
             exit 1
           fi
-          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${tag}" >> "$GITHUB_OUTPUT"
       - name: Ensure release tag does not already exist
         if: !inputs.dry_run
         env:
@@ -63,18 +63,28 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: just publish
-      - name: Create git tag
-        if: !inputs.dry_run
-        run: |
-          tag="${{ steps.release_tag.outputs.tag }}"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag "$tag"
-          git push origin "$tag"
-      - name: Create GitHub release
+      - name: Create git tag and GitHub release
         if: !inputs.dry_run
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           tag="${{ steps.release_tag.outputs.tag }}"
+          remote_tag_pushed=0
+          cleanup() {
+            echo "Cleaning up tag ${tag} after release creation failure" >&2
+            if git rev-parse "$tag" >/dev/null 2>&1; then
+              git tag -d "$tag" >/dev/null 2>&1 || true
+            fi
+            if [ "$remote_tag_pushed" -eq 1 ] && ! git push origin ":refs/tags/$tag"; then
+              echo "Failed to delete remote tag ${tag} during cleanup" >&2
+            fi
+          }
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          trap cleanup ERR
+          git tag "$tag"
+          git push origin "$tag"
+          remote_tag_pushed=1
           gh release create "$tag" --verify-tag --generate-notes --title "$tag"
+          trap - ERR

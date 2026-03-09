@@ -16,8 +16,6 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -33,15 +31,12 @@ jobs:
         id: release_tag
         run: |
           tag="$(
-            python - <<'PY'
-            import tomllib
-
-            with open("Cargo.toml", "rb") as cargo_toml:
-                cargo = tomllib.load(cargo_toml)
-
-            print(f"v{cargo['package']['version']}")
-            PY
+            cargo metadata --no-deps --format-version 1 | python3 -c 'import json, sys; metadata = json.load(sys.stdin); package = next((pkg for pkg in metadata["packages"] if pkg["name"] == "clients"), None); sys.exit("Package \"clients\" not found in cargo metadata") if package is None else print(f"v{package[\"version\"]}")'
           )"
+          if [ -z "$tag" ]; then
+            echo "Could not determine package version from cargo metadata" >&2
+            exit 1
+          fi
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
       - name: Ensure release tag does not already exist
         if: !inputs.dry_run
@@ -49,7 +44,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           tag="${{ steps.release_tag.outputs.tag }}"
-          if git rev-parse "$tag" >/dev/null 2>&1 || git ls-remote --exit-code --tags origin "$tag" >/dev/null 2>&1; then
+          if git ls-remote --exit-code --tags origin "$tag" >/dev/null 2>&1; then
             echo "Tag ${tag} already exists" >&2
             exit 1
           fi

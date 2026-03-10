@@ -86,6 +86,16 @@ client! {
     }
 }
 
+mod external_client_crate {
+    use clients::client;
+
+    client! {
+        pub struct ExportedFooClient as foo_client {
+            pub fn foo() -> String = || "from-exported-client".to_string();
+        }
+    }
+}
+
 #[derive(Depends)]
 pub struct Greeter {
     #[dep]
@@ -265,6 +275,28 @@ fn test_deps_supports_borrowed_arguments_in_async_overrides() {
         get::<AsyncCancelClient>().is_cancelled(Some(&cancelled))
     ));
     assert!(!block_on(get::<AsyncCancelClient>().is_cancelled(None)));
+}
+
+#[test]
+fn deps_macro_supports_qualified_client_paths() {
+    deps! {
+        foo = external_client_crate::foo_client.foo,
+    }
+
+    assert_eq!(foo(), "from-exported-client");
+}
+
+#[test]
+fn test_deps_supports_qualified_client_paths() {
+    test_deps! {
+        external_client_crate::foo_client.foo => || "overridden-from-qualified-path".to_string(),
+    }
+
+    deps! {
+        foo = external_client_crate::foo_client.foo,
+    }
+
+    assert_eq!(foo(), "overridden-from-qualified-path");
 }
 
 fn block_on<F>(future: F) -> F::Output

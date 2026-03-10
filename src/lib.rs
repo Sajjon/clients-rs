@@ -633,6 +633,10 @@ macro_rules! deps {
         let $binding = $client::$method::get();
         $crate::deps!($($($rest)*)?);
     };
+    ($binding:ident = $head:ident :: $($tail:ident)::+ . $method:ident $(, $($rest:tt)*)?) => {
+        let $binding = $head::$($tail)::+::$method::get();
+        $crate::deps!($($($rest)*)?);
+    };
 }
 
 /// Installs one or more dependency overrides for the remainder of the current
@@ -682,6 +686,15 @@ macro_rules! test_deps {
         let __dep_test_scope_guard = __dep_builder.enter_test();
         let _ = &__dep_test_scope_guard;
     };
+    ($head:ident :: $($tail:ident)::+ . $method:ident => $implementation:expr $(, $($rest:tt)*)?) => {
+        let mut __dep_builder = $crate::OverrideBuilder::new();
+        $head::$($tail)::+::$method::override_with(&mut __dep_builder, $implementation);
+        $(
+            $crate::__dep_test_deps_more!(__dep_builder, $($rest)*);
+        )?
+        let __dep_test_scope_guard = __dep_builder.enter_test();
+        let _ = &__dep_test_scope_guard;
+    };
 }
 
 /// Internal helper used by [`test_deps!`] to recurse across multiple override
@@ -692,6 +705,12 @@ macro_rules! __dep_test_deps_more {
     ($builder:ident, ) => {};
     ($builder:ident, $client:ident.$method:ident => $implementation:expr $(, $($rest:tt)*)?) => {
         $client::$method::override_with(&mut $builder, $implementation);
+        $(
+            $crate::__dep_test_deps_more!($builder, $($rest)*);
+        )?
+    };
+    ($builder:ident, $head:ident :: $($tail:ident)::+ . $method:ident => $implementation:expr $(, $($rest:tt)*)?) => {
+        $head::$($tail)::+::$method::override_with(&mut $builder, $implementation);
         $(
             $crate::__dep_test_deps_more!($builder, $($rest)*);
         )?

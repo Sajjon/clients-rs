@@ -454,6 +454,12 @@ fn assert_non_capturing<F>() {
     );
 }
 
+/// Hidden helper used by generated `client!` code to validate erased closures.
+#[doc(hidden)]
+pub fn __private_assert_non_capturing<F>() {
+    assert_non_capturing::<F>();
+}
+
 /// Reconstructs a zero-sized closure value after type erasure.
 ///
 /// This is safe for the crate's use because [`assert_non_capturing`] guarantees
@@ -468,6 +474,19 @@ fn assert_non_capturing<F>() {
 unsafe fn resurrect_zst<F>() -> F {
     debug_assert_eq!(mem::size_of::<F>(), 0);
     unsafe { MaybeUninit::<F>::uninit().assume_init() }
+}
+
+/// Hidden helper used by generated `client!` code to reconstruct a zero-sized
+/// closure or function item after type erasure.
+///
+/// # Safety
+///
+/// Callers must guarantee that `F` is a valid zero-sized closure or function
+/// item type. Generated `client!` code enforces this by calling
+/// [`__private_assert_non_capturing`] before routing execution here.
+#[doc(hidden)]
+pub unsafe fn __private_resurrect_zst<F>() -> F {
+    unsafe { resurrect_zst::<F>() }
 }
 
 /// Generates the family of closure-to-function-pointer erasers used by the

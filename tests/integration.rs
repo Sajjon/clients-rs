@@ -3,6 +3,8 @@ use std::any::Any;
 use std::future::Future;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::pin::Pin;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,6 +65,23 @@ client! {
     pub struct GenericClient as generic_client {
         pub fn summarize(inputs: Vec<Result<u64, DependencyError>>) -> usize = |inputs: Vec<Result<u64, DependencyError>>| {
             inputs.len()
+        };
+    }
+}
+
+client! {
+    pub struct CancelClient as cancel_client {
+        pub fn is_cancelled(cancel_flag: Option<&Arc<AtomicBool>>) -> bool = |cancel_flag: Option<&Arc<AtomicBool>>| {
+            cancel_flag.is_some_and(|flag| flag.load(Ordering::Relaxed))
+        };
+    }
+}
+
+client! {
+    pub struct AsyncCancelClient as async_cancel_client {
+        pub async fn is_cancelled(cancel_flag: Option<&Arc<AtomicBool>>) -> bool = |cancel_flag: Option<&Arc<AtomicBool>>| {
+            let was_cancelled = cancel_flag.is_some_and(|flag| flag.load(Ordering::Relaxed));
+            async move { was_cancelled }
         };
     }
 }
@@ -199,6 +218,53 @@ fn depends_derive_handles_generic_non_dependency_fields() {
     let holder = DerivedGenericHolder::from_deps();
     assert_eq!(holder.clock.now_millis(), 2468);
     assert!(holder.cached_ids.is_empty());
+}
+
+#[test]
+fn client_macro_supports_borrowed_arguments_in_live_sync_implementations() {
+    let cancelled = Arc::new(AtomicBool::new(true));
+
+    assert!(get::<CancelClient>().is_cancelled(Some(&cancelled)));
+    assert!(!get::<CancelClient>().is_cancelled(None));
+}
+
+#[test]
+fn test_deps_supports_borrowed_arguments_in_sync_overrides() {
+    test_deps! {
+        cancel_client.is_cancelled => |cancel_flag: Option<&Arc<AtomicBool>>| cancel_flag.is_some(),
+    }
+
+    let cancelled = Arc::new(AtomicBool::new(false));
+
+    assert!(get::<CancelClient>().is_cancelled(Some(&cancelled)));
+    assert!(!get::<CancelClient>().is_cancelled(None));
+}
+
+#[test]
+fn client_macro_supports_borrowed_arguments_in_live_async_implementations() {
+    let cancelled = Arc::new(AtomicBool::new(true));
+
+    assert!(block_on(
+        get::<AsyncCancelClient>().is_cancelled(Some(&cancelled))
+    ));
+    assert!(!block_on(get::<AsyncCancelClient>().is_cancelled(None)));
+}
+
+#[test]
+fn test_deps_supports_borrowed_arguments_in_async_overrides() {
+    test_deps! {
+        async_cancel_client.is_cancelled => |cancel_flag: Option<&Arc<AtomicBool>>| {
+            let was_cancelled = cancel_flag.is_some();
+            async move { was_cancelled }
+        },
+    }
+
+    let cancelled = Arc::new(AtomicBool::new(false));
+
+    assert!(block_on(
+        get::<AsyncCancelClient>().is_cancelled(Some(&cancelled))
+    ));
+    assert!(!block_on(get::<AsyncCancelClient>().is_cancelled(None)));
 }
 
 fn block_on<F>(future: F) -> F::Output

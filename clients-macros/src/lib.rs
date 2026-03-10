@@ -142,7 +142,13 @@ fn expand_client(input: TokenStream) -> Result<TokenStream, String> {
         .join("\n\n");
     let live_lines = methods
         .iter()
-        .map(|method| format!("{}: {}", method.name, method.render_live_initializer(&name)))
+        .map(|method| {
+            format!(
+                "{}: {}",
+                method.name,
+                method.render_live_initializer(&name, &module)
+            )
+        })
         .collect::<Vec<_>>()
         .join(",\n                    ");
     let module_lines = methods
@@ -219,20 +225,6 @@ struct Argument {
 }
 
 impl Method {
-    /// Returns the number of arguments declared by the method.
-    fn arity(&self) -> usize {
-        self.arguments.len()
-    }
-
-    /// Chooses the correct runtime eraser helper for the method shape.
-    fn eraser_name(&self) -> String {
-        if self.is_async {
-            format!("::clients::erase_async_{}", self.arity())
-        } else {
-            format!("::clients::erase_sync_{}", self.arity())
-        }
-    }
-
     /// Renders the argument list in declaration form, for example
     /// `id: u64, name: String`.
     fn args_decl(&self) -> String {
@@ -270,14 +262,14 @@ impl Method {
         }
     }
 
+    /// Renders the full function-pointer type stored by the client field.
+    fn fn_pointer_type(&self) -> String {
+        format!("fn({}) -> {}", self.args_types(), self.fn_pointer_return())
+    }
+
     /// Renders the struct field that stores the underlying function pointer.
     fn render_field(&self) -> String {
-        format!(
-            "{}: fn({}) -> {},",
-            self.name,
-            self.args_types(),
-            self.fn_pointer_return()
-        )
+        format!("{}: {},", self.name, self.fn_pointer_type())
     }
 
     /// Renders the ergonomic wrapper method that forwards to the stored
@@ -316,12 +308,16 @@ impl Method {
 
     /// Renders the live initializer for the function-pointer field.
     ///
-    /// When a live implementation is present, this selects the correct eraser
-    /// helper. Otherwise it generates a panic-based placeholder used to surface
-    /// missing live implementations with a readable dependency path.
-    fn render_live_initializer(&self, client_name: &str) -> String {
+    /// When a live implementation is present, this selects the exact per-method
+    /// eraser helper so higher-ranked lifetimes in borrowed arguments are
+    /// preserved. Otherwise it generates a panic-based placeholder used to
+    /// surface missing live implementations with a readable dependency path.
+    fn render_live_initializer(&self, client_name: &str, module_name: &str) -> String {
         if let Some(implementation) = &self.implementation {
-            format!("{}({implementation})", self.eraser_name())
+            format!(
+                "{module_name}::{}::__dep_erase({implementation})",
+                self.name
+            )
         } else if self.is_async {
             format!(
                 "{{
@@ -357,66 +353,106 @@ impl Method {
 
     /// Renders the per-method helper module used by `deps!` and `test_deps!`.
     fn render_module(&self, client_name: &str) -> String {
+        let args_decl = self.args_decl();
         let args_types = self.args_types();
+        let args_names = self.args_names();
         let fn_pointer_return = self.fn_pointer_return();
-        let eraser = self.eraser_name();
+        let fn_pointer_type = self.fn_pointer_type();
 
         if self.is_async {
             format!(
-                "pub mod {} {{
+                "pub mod {method_name} {{
                     use super::*;
 
-                    pub fn get() -> fn({}) -> {} {{
-                        super::get().{}
+                    #[doc(hidden)]
+                    pub fn __dep_erase<F, Fut>(_: F) -> {fn_pointer_type}
+                    where
+                        F: Fn({args_types}) -> Fut + Copy + 'static,
+                        Fut: ::core::future::Future<Output = {return_ty}> + Send + 'static,
+                    {{
+                        ::clients::__private_assert_non_capturing::<F>();
+
+                        fn __dep_trampoline<F, Fut>({args_decl}) -> {fn_pointer_return}
+                        where
+                            F: Fn({args_types}) -> Fut + Copy + 'static,
+                            Fut: ::core::future::Future<Output = {return_ty}> + Send + 'static,
+                        {{
+                            let implementation: F =
+                                unsafe {{ ::clients::__private_resurrect_zst::<F>() }};
+                            ::clients::boxed(implementation({args_names}))
+                        }}
+
+                        __dep_trampoline::<F, Fut>
+                    }}
+
+                    pub fn get() -> {fn_pointer_type} {{
+                        super::get().{method_name}
                     }}
 
                     pub fn override_with<F, Fut>(builder: &mut ::clients::OverrideBuilder, implementation: F)
                     where
-                        F: Fn({}) -> Fut + Copy + 'static,
-                        Fut: ::core::future::Future<Output = {}> + Send + 'static,
+                        F: Fn({args_types}) -> Fut + Copy + 'static,
+                        Fut: ::core::future::Future<Output = {return_ty}> + Send + 'static,
                     {{
                         builder.update::<super::super::{client_name}, _>(|mut dependency| {{
-                            dependency.{} = {}(implementation);
+                            dependency.{method_name} = __dep_erase(implementation);
                             dependency
                         }});
                     }}
                 }}",
-                self.name,
-                args_types,
-                fn_pointer_return,
-                self.name,
-                args_types,
-                self.return_ty,
-                self.name,
-                eraser,
+                method_name = self.name,
+                args_decl = args_decl,
+                args_names = args_names,
+                args_types = args_types,
+                fn_pointer_return = fn_pointer_return,
+                fn_pointer_type = fn_pointer_type,
+                return_ty = self.return_ty,
             )
         } else {
             format!(
-                "pub mod {} {{
+                "pub mod {method_name} {{
                     use super::*;
 
-                    pub fn get() -> fn({}) -> {} {{
-                        super::get().{}
+                    #[doc(hidden)]
+                    pub fn __dep_erase<F>(_: F) -> {fn_pointer_type}
+                    where
+                        F: Fn({args_types}) -> {return_ty} + Copy + 'static,
+                    {{
+                        ::clients::__private_assert_non_capturing::<F>();
+
+                        fn __dep_trampoline<F>({args_decl}) -> {fn_pointer_return}
+                        where
+                            F: Fn({args_types}) -> {return_ty} + Copy + 'static,
+                        {{
+                            let implementation: F =
+                                unsafe {{ ::clients::__private_resurrect_zst::<F>() }};
+                            implementation({args_names})
+                        }}
+
+                        __dep_trampoline::<F>
+                    }}
+
+                    pub fn get() -> {fn_pointer_type} {{
+                        super::get().{method_name}
                     }}
 
                     pub fn override_with<F>(builder: &mut ::clients::OverrideBuilder, implementation: F)
                     where
-                        F: Fn({}) -> {} + Copy + 'static,
+                        F: Fn({args_types}) -> {return_ty} + Copy + 'static,
                     {{
                         builder.update::<super::super::{client_name}, _>(|mut dependency| {{
-                            dependency.{} = {}(implementation);
+                            dependency.{method_name} = __dep_erase(implementation);
                             dependency
                         }});
                     }}
                 }}",
-                self.name,
-                args_types,
-                fn_pointer_return,
-                self.name,
-                args_types,
-                self.return_ty,
-                self.name,
-                eraser,
+                method_name = self.name,
+                args_decl = args_decl,
+                args_names = args_names,
+                args_types = args_types,
+                fn_pointer_return = fn_pointer_return,
+                fn_pointer_type = fn_pointer_type,
+                return_ty = self.return_ty,
             )
         }
     }
